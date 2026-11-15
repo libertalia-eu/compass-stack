@@ -18,3 +18,7 @@ Every credential is a required variable without a default. Values come from an e
 Releases are tags (`vMAJOR.MINOR.PATCH`). Development, tests and the development stack live in a separate repository and pin a release.
 
 The first release was cut from `libertalia-eu/COMPASS` at 6881fb32 with the file layout reorganised (the former `dev/<service>/` folders are top-level here).
+
+## License
+
+GNU Affero General Public License v3.0, see `LICENSE`.
