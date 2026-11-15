@@ -5,11 +5,12 @@
 #   Keycloak sign-in: writes branding.css (colors, logo) that the theme loads after its own styles; reload with Ctrl+Shift+R.
 #   Realm display name: set with kcadm. Nextcloud: name, color, background color, logo, favicon through occ and the theming API.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${COMPASS_PROJECT_DIR:-$here}" # a project that includes this repository (the development stack) names its own directory
 
 # shellcheck source=branding/lib.sh
-source branding/lib.sh
-env_file="${1:-branding/branding.env}"
+source "$here/branding/lib.sh"
+env_file="${1:-$here/branding/branding.env}"
 out="${BRANDING_CSS:-$PWD/branding/out/branding.css}"
 branding_read "$env_file"
 logo="$branding_logo" favicon="$branding_favicon"
@@ -37,7 +38,7 @@ if [ -z "${BRANDING_NEXTCLOUD_ONLY:-}" ]; then
   # shellcheck disable=SC2016 # the script runs in the container, its variables expand there
   "${dc[@]}" exec -T keycloak bash -c \
     '/opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null' </dev/null
-  realm_name="${BRAND_NAME:-$(jq -r .displayName keycloak/realm-libertalia.json)}"
+  realm_name="${BRAND_NAME:-$(jq -r .displayName "$here/keycloak/realm-libertalia.json")}"
   "${kc[@]}" update realms/libertalia -s "displayName=$realm_name" -s "displayNameHtml=$realm_name" </dev/null
 fi
 
@@ -62,7 +63,7 @@ theming primary_color "$BRAND_PRIMARY"
 font_css="$(mktemp)"
 trap 'rm -f "$font_css"' EXIT
 {
-  awk '/^@font-face \{/ {on = 1} on {print} on && /^\}/ {exit}' keycloak/themes/compass/login/resources/css/compass.css
+  awk '/^@font-face \{/ {on = 1} on {print} on && /^\}/ {exit}' "$here/keycloak/themes/compass/login/resources/css/compass.css"
   echo ':root, body { --font-face: "Inter", ui-sans-serif, system-ui, sans-serif; }'
 } >"$font_css"
 "${nc[@]}" sh -c 'php occ app:install theming_customcss >/dev/null 2>&1 || php occ app:enable theming_customcss >/dev/null' </dev/null
