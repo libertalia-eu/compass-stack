@@ -1,0 +1,80 @@
+# Routes of the product (REQ-001, REQ-093): one router and one service per app. Nothing here is for development only; the local
+# certificate and the Mailpit route are in dev.yml next to this file, which the development stack reads and a customer system never gets.
+http:
+  middlewares:
+    # The one Frappe site answers only under its own name (a foreign host gets "does not exist"), so the app
+    # subdomains of REQ-065 rewrite the host header to the site; Frappe itself stays unchanged (REQ-032).
+    frappe-host:
+      headers:
+        customRequestHeaders:
+          Host: '{{ env "COMPASS_FRAPPE_LABEL" }}{{ env "COMPASS_HOST_SUFFIX" }}'
+    # The root of an app subdomain opens the app, deeper URLs keep the app prefix of Frappe.
+    root-crm:
+      replacePathRegex:
+        regex: "^/$"
+        replacement: "/crm"
+    root-chat:
+      replacePathRegex:
+        regex: "^/$"
+        replacement: "/raven"
+    root-support:
+      replacePathRegex:
+        regex: "^/$"
+        replacement: "/helpdesk"
+  routers:
+    keycloak:
+      rule: Host(`auth{{ env "COMPASS_HOST_SUFFIX" }}`)
+      entryPoints: [websecure]
+      service: keycloak
+      tls: {}
+    nextcloud:
+      rule: Host(`cloud{{ env "COMPASS_HOST_SUFFIX" }}`)
+      entryPoints: [websecure]
+      service: nextcloud
+      tls: {}
+    eurooffice:
+      rule: Host(`office{{ env "COMPASS_HOST_SUFFIX" }}`)
+      entryPoints: [websecure]
+      service: eurooffice
+      tls: {}
+    frappe:
+      rule: Host(`{{ env "COMPASS_FRAPPE_LABEL" }}{{ env "COMPASS_HOST_SUFFIX" }}`)
+      entryPoints: [websecure]
+      service: frappe
+      tls: {}
+    # One subdomain per app (REQ-065): crm. = CRM, support. = Helpdesk, chat. = Raven, all on the one site.
+    crm:
+      rule: Host(`crm{{ env "COMPASS_HOST_SUFFIX" }}`)
+      entryPoints: [websecure]
+      service: frappe
+      middlewares: [frappe-host, root-crm]
+      tls: {}
+    support:
+      rule: Host(`support{{ env "COMPASS_HOST_SUFFIX" }}`)
+      entryPoints: [websecure]
+      service: frappe
+      middlewares: [frappe-host, root-support]
+      tls: {}
+    chat:
+      rule: Host(`chat{{ env "COMPASS_HOST_SUFFIX" }}`)
+      entryPoints: [websecure]
+      service: frappe
+      middlewares: [frappe-host, root-chat]
+      tls: {}
+  services:
+    frappe:
+      loadBalancer:
+        servers:
+          - url: http://frappe-frontend:8080
+    nextcloud:
+      loadBalancer:
+        servers:
+          - url: http://nextcloud:80
+    eurooffice:
+      loadBalancer:
+        servers:
+          - url: http://eurooffice:80
+    keycloak:
+      loadBalancer:
+        servers:
+          - url: http://auth-entry:8080

@@ -1,0 +1,7 @@
+compass_install_dir: /opt/compass
+compass_registry: ghcr.io/libertalia-eu
+# Empty token: no registry login (a public image needs none).
+compass_registry_user: ""
+compass_registry_token: ""
+compass_acme_ca: https://acme-v02.api.letsencrypt.org/directory
+compass_dns_labels: [auth, cloud, office, team, crm, support, chat]

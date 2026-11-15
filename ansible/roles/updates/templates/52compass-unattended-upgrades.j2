@@ -1,0 +1,12 @@
+// Managed by Ansible (REQ-084). Security updates only: the default list also holds the plain release pocket.
+#clear "Unattended-Upgrade::Allowed-Origins";
+Unattended-Upgrade::Allowed-Origins {
+  "${distro_id}:${distro_codename}-security";
+  "${distro_id}ESMApps:${distro_codename}-apps-security";
+  "${distro_id}ESM:${distro_codename}-infra-security";
+};
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+Unattended-Upgrade::Automatic-Reboot "{{ 'true' if compass_auto_reboot else 'false' }}";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ '%02d' | format(compass_auto_reboot_hour) }}:00";

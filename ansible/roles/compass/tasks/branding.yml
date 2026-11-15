@@ -1,0 +1,33 @@
+# The files that customer/setup.sh --branding wrote next to the customer env file: stylesheet, logo, favicon and
+# branding-<name>.env. compass_customer_branding_env names that env file; the others lie next to it.
+- name: Read the branding file of the customer
+  ansible.builtin.set_fact:
+    compass_branding_text: "{{ lookup('ansible.builtin.file', compass_customer_branding_env) }}"
+    compass_branding_dir: "{{ compass_customer_branding_env | dirname }}"
+
+- name: Create the folder of the look
+  ansible.builtin.file:
+    path: "{{ compass_install_dir }}/config/branding"
+    state: directory
+    mode: "0755"
+
+- name: Copy stylesheet, logo and favicon
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ compass_install_dir }}/config/branding/{{ item.dest }}"
+    mode: "0644"
+  register: compass_branding_copied
+  loop: "{{ compass_branding_files }}"
+  vars:
+    compass_branding_logo: "{{ compass_branding_text | regex_findall('(?m)^BRAND_LOGO=(.+)$') | first | default('') | basename }}"
+    compass_branding_favicon: "{{ compass_branding_text | regex_findall('(?m)^BRAND_FAVICON=(.+)$') | first | default('') | basename }}"
+    compass_branding_files: >-
+      {{ [{'src': compass_customer_branding_env | regex_replace('[.]env$', '.css'), 'dest': 'branding.css'}]
+         + ([{'src': compass_branding_dir + '/' + compass_branding_logo, 'dest': compass_branding_logo}] if compass_branding_logo else [])
+         + ([{'src': compass_branding_dir + '/' + compass_branding_favicon, 'dest': compass_branding_favicon}] if compass_branding_favicon else []) }}
+
+- name: Write the branding file of the server (paths relative to it)
+  ansible.builtin.copy:
+    dest: "{{ compass_install_dir }}/config/branding/branding.env"
+    mode: "0644"
+    content: "{{ compass_branding_text | regex_replace('(?m)^(BRAND_(?:LOGO|FAVICON))=.*/([^/]+)$', '\\1=\\2') }}"

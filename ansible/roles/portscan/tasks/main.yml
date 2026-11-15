@@ -1,0 +1,26 @@
+# Seen from outside, from the operator's machine: only 22, 80 and 443 answer.
+- name: Require the public address of the server
+  ansible.builtin.assert:
+    that: compass_public_ip is defined
+    fail_msg: "Set compass_public_ip in the customer file: the scan goes to the address the internet sees."
+
+- name: SSH and web ports answer
+  ansible.builtin.wait_for:
+    host: "{{ compass_public_ip }}"
+    port: "{{ item }}"
+    timeout: 10
+  loop: [22, 80, 443]
+  delegate_to: localhost
+  become: false
+
+- name: Every other port stays closed
+  ansible.builtin.wait_for:
+    host: "{{ compass_public_ip }}"
+    port: "{{ item }}"
+    state: stopped
+    timeout: 4
+  loop: "{{ compass_closed_ports }}"
+  delegate_to: localhost
+  become: false
+  register: compass_scan
+  failed_when: compass_scan.failed

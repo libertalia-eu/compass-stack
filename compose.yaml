@@ -1,0 +1,524 @@
+# Stack for COMPASS (REQ-001, REQ-002, REQ-003). Every credential is a required variable without a default: a customer
+# system gets its values from the env file of customer/setup.sh (REQ-026), the development stack from its own env file. The parts only for development (the certificate
+# from a local CA, the mock mail servers) live in the development repository, not here.
+name: libertalia-dev
+
+# One Frappe image with CRM, Helpdesk, Raven and compass_sso, built from the official frappe_docker recipe at a
+# fixed tag (apps and versions: frappe/apps.json). The first `docker compose build` takes a while.
+x-frappe: &frappe
+  image: libertalia-frappe:version-16
+  build:
+    context: https://github.com/frappe/frappe_docker.git#v4.2.0
+    dockerfile: images/layered/Containerfile
+    args:
+      # shortcut: follows the branch version-16, because frappe/build and frappe/base have no common release tag; pin once they publish a v16.x.y release tag. a build logs the commit it followed (ci/frappe-image-tag.sh, COMPASS_REPORT_COMMITS=1), the tag does not change with it.
+      FRAPPE_BRANCH: version-16
+    secrets:
+      - apps_json
+  volumes:
+    - frappe-sites:/home/frappe/frappe-bench/sites
+    - frappe-logs:/home/frappe/frappe-bench/logs
+  environment: &frappe-environment
+    # The worker downloads the language data of the Helpdesk search (REQ-010), the backend reads it: one folder in the shared volume.
+    NLTK_DATA: /home/frappe/frappe-bench/sites/nltk_data
+    # Nextcloud is no Frappe app: compass_sso adds it to the app overview and the apps menus from this address (REQ-039).
+    COMPASS_NEXTCLOUD_URL: https://cloud${COMPASS_HOST_SUFFIX:?}
+
+services:
+  traefik:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: traefik:v3.7.17
+    command:
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.websecure.address=:443
+      - --ping=true
+      - --log.level=INFO
+    environment:
+      # The host names in traefik/dynamic.yml are the app names plus this suffix (REQ-011).
+      COMPASS_HOST_SUFFIX: ${COMPASS_HOST_SUFFIX:?}
+      # The one Frappe site (CRM, Helpdesk, Raven) is <label><suffix>; "office" is taken by Euro-Office (REQ-032).
+      COMPASS_FRAPPE_LABEL: ${COMPASS_FRAPPE_LABEL:-team}
+    networks:
+      default:
+        # Containers reach the apps under the same names as the browser, so OIDC issuer URLs match.
+        aliases:
+          - auth${COMPASS_HOST_SUFFIX:?}
+          - cloud${COMPASS_HOST_SUFFIX:?}
+          - office${COMPASS_HOST_SUFFIX:?}
+          - ${COMPASS_FRAPPE_LABEL:-team}${COMPASS_HOST_SUFFIX:?}
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  keycloak-db:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?}
+    volumes:
+      - keycloak-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  keycloak:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: quay.io/keycloak/keycloak:26.8.1
+    # The Docker VM of the development machine has 6.2 GB: when it runs out of memory the kernel ends the process
+    # with the highest score. Keycloak is the login of every app, so it goes last and Euro-Office first.
+    oom_score_adj: -500
+    command: ["start", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?}
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak-db
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?}
+      KC_HOSTNAME: https://auth${COMPASS_HOST_SUFFIX:?}
+      # Placeholders of the realm file (REQ-011); Keycloak replaces the ${...} of the file from these
+      # variables (REQ-026), so a customer system can bring its own realm file without dev values.
+      COMPASS_HOST_SUFFIX: ${COMPASS_HOST_SUFFIX:?}
+      NEXTCLOUD_CLIENT_SECRET: ${NEXTCLOUD_CLIENT_SECRET:?}
+      FRAPPE_CLIENT_SECRET: ${FRAPPE_CLIENT_SECRET:?}
+      COMPASS_FRAPPE_LABEL: ${COMPASS_FRAPPE_LABEL:-team}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      # Theme caches (REQ-028): on in operation; branding/apply.sh turns the file cache off, so CSS edits show at once.
+      KC_SPI_THEME__CACHE_THEMES: ${KC_THEME_CACHE:-true}
+      KC_SPI_THEME__CACHE_TEMPLATES: ${KC_TEMPLATE_CACHE:-true}
+      KC_SPI_THEME__STATIC_MAX_AGE: ${KC_THEME_STATIC_MAX_AGE:-2592000}
+    volumes:
+      - ${KEYCLOAK_REALM_FILE:?}:/opt/keycloak/data/import/realm-libertalia.json:ro
+      # Login theme in the look of Frappe UI (REQ-020, REQ-029): styles and the login page on top of keycloak.v2. Single files, so the Coolify file can carry them.
+      - ./keycloak/themes/compass/login/theme.properties:/opt/keycloak/themes/compass/login/theme.properties:ro
+      - ./keycloak/themes/compass/login/resources/css/compass.css:/opt/keycloak/themes/compass/login/resources/css/compass.css:ro
+      - ./keycloak/themes/compass/login/login.ftl:/opt/keycloak/themes/compass/login/login.ftl:ro
+      - ./keycloak/themes/compass/login/messages/messages_de.properties:/opt/keycloak/themes/compass/login/messages/messages_de.properties:ro
+      - ./keycloak/themes/compass/login/messages/messages_en.properties:/opt/keycloak/themes/compass/login/messages/messages_en.properties:ro
+      # Customer branding (REQ-028): the default is empty, branding/apply.sh points this at the generated file.
+      - ${BRANDING_CSS:-./branding/default.css}:/opt/keycloak/themes/compass/login/resources/css/branding.css:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      # The image has no curl. Ask for the imported realm over a plain TCP socket: a readiness
+      # probe on the management port reports UP while the realm import still answers 503.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /realms/libertalia HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          head -n 1 <&3 | grep -q ' 200 '
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  auth-entry:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    # Entry of the auth host (REQ-024): the bare address opens the admin console of the realm; the rest goes to Keycloak.
+    image: nginx:1.29-alpine
+    volumes:
+      - ./keycloak/auth-entry.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/realms/master/.well-known/openid-configuration"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  nextcloud-db:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: mariadb:11.8
+    # Binary logs are kept 7 days by default (REQ-075); NEXTCLOUD_BINLOG_EXPIRE_SECONDS changes that.
+    command: ["--transaction-isolation=READ-COMMITTED", "--log-bin=binlog", "--binlog-format=ROW", "--binlog-expire-logs-seconds=${NEXTCLOUD_BINLOG_EXPIRE_SECONDS:-604800}"]
+    environment:
+      MARIADB_DATABASE: nextcloud
+      MARIADB_USER: nextcloud
+      MARIADB_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:?}
+      MARIADB_ROOT_PASSWORD: ${NEXTCLOUD_DB_ROOT_PASSWORD:?}
+    volumes:
+      - nextcloud-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  nextcloud-redis:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  nextcloud-fpm:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: nextcloud:production-fpm-alpine
+    environment:
+      MYSQL_HOST: nextcloud-db
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:?}
+      REDIS_HOST: nextcloud-redis
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:?}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?}
+      # "nextcloud" is the name Euro-Office uses for its calls back into Nextcloud.
+      NEXTCLOUD_TRUSTED_DOMAINS: cloud${COMPASS_HOST_SUFFIX:?} nextcloud
+      OVERWRITEPROTOCOL: https
+      OVERWRITEHOST: cloud${COMPASS_HOST_SUFFIX:?}
+      OVERWRITECLIURL: https://cloud${COMPASS_HOST_SUFFIX:?}
+      # Read by nextcloud/configure.sh (REQ-011).
+      COMPASS_HOST_SUFFIX: ${COMPASS_HOST_SUFFIX:?}
+      COMPASS_FRAPPE_LABEL: ${COMPASS_FRAPPE_LABEL:-team}
+      TRUSTED_PROXIES: 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+      # Read by nextcloud/configure.sh
+      OIDC_CLIENT_SECRET: ${NEXTCLOUD_CLIENT_SECRET:?}
+      EUROOFFICE_JWT_SECRET: ${EUROOFFICE_JWT_SECRET:?}
+      # The no-reply mailbox sends the mails of Nextcloud (REQ-066), read by nextcloud/configure.sh. An empty address (a
+      # customer system without the mailbox) sends nothing; compose.override.yaml points the development stack at Mailpit (REQ-093).
+      COMPASS_NOREPLY_ADDRESS: ${COMPASS_NOREPLY_ADDRESS-}
+      COMPASS_NOREPLY_LOGIN: ${COMPASS_NOREPLY_LOGIN:-}
+      COMPASS_NOREPLY_PASSWORD: ${COMPASS_NOREPLY_PASSWORD:-}
+      COMPASS_NOREPLY_SMTP_HOST: ${COMPASS_NOREPLY_SMTP_HOST:-}
+      COMPASS_NOREPLY_SMTP_PORT: ${COMPASS_NOREPLY_SMTP_PORT:-}
+      COMPASS_NOREPLY_SMTP_SECURITY: ${COMPASS_NOREPLY_SMTP_SECURITY:-}
+      # Look of a customer system (REQ-036), read by nextcloud/configure.sh; empty keeps the default.
+      BRAND_NAME: ${BRAND_NAME:-}
+      BRAND_PRIMARY: ${BRAND_PRIMARY:-}
+      BRAND_BACKGROUND: ${BRAND_BACKGROUND:-}
+    volumes:
+      - nextcloud:/var/www/html
+      - ./nextcloud/configure.sh:/docker-entrypoint-hooks.d/before-starting/10-configure.sh:ro
+      - ./nextcloud/icons/crm.svg:/frappe-icons/crm.svg:ro
+      - ./nextcloud/icons/helpdesk.svg:/frappe-icons/helpdesk.svg:ro
+      - ./nextcloud/icons/chat.svg:/frappe-icons/chat.svg:ro
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+      nextcloud-redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      traefik:
+        condition: service_healthy
+    healthcheck:
+      # Healthy once PHP-FPM listens: it starts after install and nextcloud/configure.sh.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+
+  # Front door of Nextcloud (REQ-060): nginx answers as nextcloud:80 for Traefik, Euro-Office and the slot proxy and hands
+  # PHP to nextcloud-fpm:9000 over the network, so it works on Coolify too (no shared network namespace needed).
+  nextcloud:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: nginx:1.28-alpine
+    volumes:
+      - nextcloud:/var/www/html:ro
+      - ./nextcloud/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      nextcloud-fpm:
+        condition: service_healthy
+    healthcheck:
+      # Healthy only after install and nextcloud/configure.sh: PHP-FPM starts after the hooks. 127.0.0.1, not
+      # localhost: busybox wget tries ::1 first and nginx listens on IPv4 only.
+      test: ["CMD-SHELL", "wget -q -O- --header='Host: cloud${COMPASS_HOST_SUFFIX:?}' http://127.0.0.1/status.php | grep -q '\"installed\":true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+
+  nextcloud-loopback:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    # libcurl (PHP) answers every *.localhost name itself with 127.0.0.1 and never asks Docker's DNS.
+    # This sidecar shares the network of Nextcloud and forwards its port 443 to the entry point, so
+    # Nextcloud reaches Keycloak under the same name as the browser. Recreate it with Nextcloud.
+    image: alpine/socat:1.8.1.3
+    network_mode: service:nextcloud-fpm
+    command: ["TCP-LISTEN:443,fork,reuseaddr,bind=127.0.0.1", "TCP:traefik:443"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "443"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - nextcloud-fpm
+
+  eurooffice:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: ghcr.io/euro-office/documentserver:v9.3.7-1
+    oom_score_adj: 500
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${EUROOFFICE_JWT_SECRET:?}
+      # Nextcloud is reached on a private address of the Compose network.
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost/healthcheck | grep -q true"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+
+  frappe-db:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: mariadb:11.8
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --innodb-snapshot-isolation=OFF
+    environment:
+      MARIADB_ROOT_PASSWORD: ${FRAPPE_DB_ROOT_PASSWORD:?}
+    volumes:
+      - frappe-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  frappe-redis-cache:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frappe-redis-queue:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: redis:8-alpine
+    volumes:
+      # Waiting jobs survive recreating the container (REQ-006).
+      - frappe-redis-queue:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frappe-configurator:
+    <<: *frappe
+    restart: "no"
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        ls -1 apps > sites/apps.txt &&
+        bench set-config -g db_host frappe-db &&
+        bench set-config -gp db_port 3306 &&
+        bench set-config -g redis_cache redis://frappe-redis-cache:6379 &&
+        bench set-config -g redis_queue redis://frappe-redis-queue:6379 &&
+        bench set-config -g redis_socketio redis://frappe-redis-queue:6379 &&
+        bench set-config -gp socketio_port 9000
+    depends_on:
+      frappe-db:
+        condition: service_healthy
+
+  frappe-sites:
+    <<: *frappe
+    restart: "no"
+    entrypoint: ["bash", "/setup-sites.sh"]
+    environment:
+      DB_ROOT_PASSWORD: ${FRAPPE_DB_ROOT_PASSWORD:?}
+      ADMIN_PASSWORD: ${FRAPPE_ADMIN_PASSWORD:?}
+      FRAPPE_CLIENT_SECRET: ${FRAPPE_CLIENT_SECRET:?}
+      COMPASS_FRAPPE_LABEL: ${COMPASS_FRAPPE_LABEL:-team}
+      COMPASS_HOST_SUFFIX: ${COMPASS_HOST_SUFFIX:?}
+      # The test users exist only in the development stack (REQ-026); a customer system sets COMPASS_TEST_USERS=0.
+      COMPASS_TEST_USERS: ${COMPASS_TEST_USERS:-0}
+      # Values of the setup wizard (REQ-030).
+      COMPASS_LANGUAGE: ${COMPASS_LANGUAGE:-de}
+      COMPASS_COUNTRY: ${COMPASS_COUNTRY:-Germany}
+      # Empty by default: a time zone set at the first start kept the Helpdesk search from building its index.
+      COMPASS_TIMEZONE: ${COMPASS_TIMEZONE:-}
+      COMPASS_CURRENCY: ${COMPASS_CURRENCY:-EUR}
+      COMPASS_COMPANY_NAME: ${COMPASS_COMPANY_NAME:-Libertalia}
+      # One public channel for everyone in the Raven workspace; the name works in German and English.
+      COMPASS_DEFAULT_CHANNEL: ${COMPASS_DEFAULT_CHANNEL:-coffee-station}
+      # The mailboxes support@, sales@ and no-reply@ (REQ-033, REQ-066) as one JSON list with their servers. "dev" means the
+      # mocks of the development stack (compose.override.yaml sets it, REQ-093), which setup-sites.sh expands with the password
+      # below; a customer system sets the list (customer/setup.sh --mail, REQ-056) or leaves it empty for no mailbox at all.
+      COMPASS_MAILBOXES: ${COMPASS_MAILBOXES-}
+      COMPASS_MAIL_PASSWORD: ${COMPASS_MAIL_PASSWORD-}
+    volumes:
+      - frappe-sites:/home/frappe/frappe-bench/sites
+      - frappe-logs:/home/frappe/frappe-bench/logs
+      - ./frappe/setup-sites.sh:/setup-sites.sh:ro
+    depends_on:
+      frappe-configurator:
+        condition: service_completed_successfully
+      frappe-redis-cache:
+        condition: service_healthy
+      frappe-redis-queue:
+        condition: service_healthy
+
+  frappe-backend:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    <<: *frappe
+    environment:
+      <<: *frappe-environment
+      # Gunicorn takes the scheme from X-Forwarded-Proto only from trusted peers; nginx is another container, so redirects went to http.
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - frappe-sites:/home/frappe/frappe-bench/sites
+      - frappe-logs:/home/frappe/frappe-bench/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs -H 'Host: ${COMPASS_FRAPPE_LABEL:-team}${COMPASS_HOST_SUFFIX:?}' http://localhost:8000/api/method/ping | grep -q pong"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    depends_on:
+      frappe-sites:
+        condition: service_completed_successfully
+
+  frappe-frontend:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    <<: *frappe
+    command: ["nginx-entrypoint.sh"]
+    environment:
+      BACKEND: frappe-backend:8000
+      SOCKETIO: frappe-websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs -H 'Host: ${COMPASS_FRAPPE_LABEL:-team}${COMPASS_HOST_SUFFIX:?}' http://localhost:8080/api/method/ping | grep -q pong"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    depends_on:
+      frappe-backend:
+        condition: service_healthy
+      frappe-websocket:
+        condition: service_started
+
+  frappe-websocket:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    <<: *frappe
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+    environment:
+      <<: *frappe-environment
+    volumes:
+      - frappe-sites:/home/frappe/frappe-bench/sites
+      - frappe-logs:/home/frappe/frappe-bench/logs
+    healthcheck:
+      # Healthy while the port of the websocket answers.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      frappe-sites:
+        condition: service_completed_successfully
+
+  frappe-worker:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    <<: *frappe
+    command: ["bench", "worker", "--queue", "long,default,short"]
+    volumes:
+      - frappe-sites:/home/frappe/frappe-bench/sites
+      - frappe-logs:/home/frappe/frappe-bench/logs
+      - ./frappe/healthcheck-worker.py:/healthcheck.py:ro
+    healthcheck:
+      test: ["CMD", "/home/frappe/frappe-bench/env/bin/python", "/healthcheck.py"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      frappe-sites:
+        condition: service_completed_successfully
+
+  frappe-scheduler:
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    <<: *frappe
+    command: ["bench", "schedule"]
+    volumes:
+      - frappe-sites:/home/frappe/frappe-bench/sites
+      - frappe-logs:/home/frappe/frappe-bench/logs
+      - ./frappe/healthcheck-scheduler.py:/healthcheck.py:ro
+    healthcheck:
+      test: ["CMD", "/home/frappe/frappe-bench/env/bin/python", "/healthcheck.py"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      frappe-sites:
+        condition: service_completed_successfully
+
+  # Backup job (REQ-072): off in the development stack (profile "backup"), a customer env file sets COMPOSE_PROFILES=backup.
+  # Dumps the three databases and archives the volumes nextcloud and frappe-sites on COMPASS_BACKUP_SCHEDULE (cron, default
+  # nightly) to COMPASS_BACKUP_TARGET (a folder, default the volume "backups", or s3://bucket/prefix), keeps COMPASS_BACKUP_KEEP
+  # copies. Restore: backup/restore.sh. A new kind of target is one more file under backup/drivers/ and one mount line here.
+  backup:
+    profiles: ["backup"]
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: postgres:17-alpine
+    entrypoint: ["sh", "/backup/backup.sh"]
+    command: ["cron"]
+    environment:
+      COMPASS_BACKUP_SCHEDULE: ${COMPASS_BACKUP_SCHEDULE:-0 2 * * *}
+      COMPASS_BACKUP_TARGET: ${COMPASS_BACKUP_TARGET:-/backups}
+      COMPASS_BACKUP_KEEP: ${COMPASS_BACKUP_KEEP:-7}
+      # The keys of an S3 target have no development default: a customer sets them in its env file (REQ-026).
+      COMPASS_BACKUP_S3_ENDPOINT: ${COMPASS_BACKUP_S3_ENDPOINT:-}
+      COMPASS_BACKUP_S3_REGION: ${COMPASS_BACKUP_S3_REGION:-}
+      COMPASS_BACKUP_S3_KEY_ID: ${COMPASS_BACKUP_S3_KEY_ID:-}
+      COMPASS_BACKUP_S3_KEY: ${COMPASS_BACKUP_S3_KEY:-}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?}
+      NEXTCLOUD_DB_ROOT_PASSWORD: ${NEXTCLOUD_DB_ROOT_PASSWORD:?}
+      FRAPPE_DB_ROOT_PASSWORD: ${FRAPPE_DB_ROOT_PASSWORD:?}
+    volumes:
+      - ${COMPASS_BACKUP_DIR:-backups}:/backups
+      - backup-work:/work
+      - nextcloud:/volumes/nextcloud
+      - frappe-sites:/volumes/frappe-sites
+      - ./backup/backup.sh:/backup/backup.sh:ro
+      - ./backup/drivers/local.sh:/backup/drivers/local.sh:ro
+      - ./backup/drivers/s3.sh:/backup/drivers/s3.sh:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+      nextcloud-db:
+        condition: service_healthy
+      frappe-db:
+        condition: service_healthy
+
+secrets:
+  apps_json:
+    # frappe/build.sh points COMPASS_APPS_JSON at apps.json or apps-upstream.json.
+    file: ${COMPASS_APPS_JSON:-./frappe/apps.json}
+
+volumes:
+  keycloak-db:
+  frappe-db:
+  frappe-sites:
+  frappe-logs:
+  frappe-redis-queue:
+  nextcloud-db:
+  nextcloud:
+  backups:
+  backup-work:

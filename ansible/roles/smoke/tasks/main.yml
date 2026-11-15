@@ -1,0 +1,49 @@
+# A failing check stops the run: the system is not released to the customer (REQ-053). The certificates are checked, too:
+# validate_certs stays on, so a missing Let's Encrypt certificate fails here.
+- name: Keycloak answers with the realm of the customer
+  ansible.builtin.uri:
+    url: "https://auth{{ compass_host_suffix }}/realms/{{ compass_realm }}/.well-known/openid-configuration"
+    return_content: true
+  delegate_to: localhost
+  become: false
+  register: compass_oidc
+  retries: 30
+  delay: 10
+  until: compass_oidc.status is defined and compass_oidc.status == 200
+  failed_when: compass_oidc.status | default(0) != 200 or compass_oidc.json.issuer != 'https://auth' ~ compass_host_suffix ~ '/realms/' ~ compass_realm
+
+- name: Nextcloud is installed
+  ansible.builtin.uri:
+    url: "https://cloud{{ compass_host_suffix }}/status.php"
+    return_content: true
+  delegate_to: localhost
+  become: false
+  register: compass_nextcloud
+  failed_when: compass_nextcloud.json.installed is not defined or not compass_nextcloud.json.installed
+
+- name: Frappe answers
+  ansible.builtin.uri:
+    url: "https://{{ compass_frappe_label }}{{ compass_host_suffix }}/api/method/ping"
+    return_content: true
+  delegate_to: localhost
+  become: false
+  register: compass_frappe
+  failed_when: "'pong' not in compass_frappe.content"
+
+- name: Plain HTTP goes to HTTPS
+  ansible.builtin.uri:
+    url: "http://auth{{ compass_host_suffix }}/"
+    follow_redirects: none
+    status_code: [301, 302, 307, 308]
+  delegate_to: localhost
+  become: false
+
+- name: The development test users do not exist (REQ-026)
+  ansible.builtin.uri:
+    url: "https://auth{{ compass_host_suffix }}/realms/{{ compass_realm }}/protocol/openid-connect/token"
+    method: POST
+    body_format: form-urlencoded
+    body: { grant_type: password, client_id: dev-cli, username: alice, password: dev-alice-password }
+    status_code: [400, 401]
+  delegate_to: localhost
+  become: false

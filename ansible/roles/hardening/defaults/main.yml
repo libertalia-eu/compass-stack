@@ -1,0 +1,4 @@
+# An address is locked out for this many seconds after this many failed SSH logins within the window.
+compass_ssh_maxretry: 5
+compass_ssh_findtime: 600
+compass_ssh_bantime: 3600

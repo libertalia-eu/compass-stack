@@ -1,0 +1,74 @@
+- name: Load the names that differ per distribution family
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+- name: Refuse an unsupported distribution
+  ansible.builtin.assert:
+    that: (ansible_facts['distribution'] == 'Ubuntu' and ansible_facts['distribution_version'] == '26.04') or
+          (ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == '10')
+    fail_msg: "Only Ubuntu 26.04 and AlmaLinux 10 are supported (REQ-054)."
+
+- name: Refresh the package index (a fresh Ubuntu image has none)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Install the firewall
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+
+- name: Start the firewall
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+
+- name: Allow SSH and web traffic from the internet
+  ansible.posix.firewalld:
+    zone: public
+    service: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: [ssh, http, https]
+
+- name: Close the web console that AlmaLinux opens by default
+  ansible.posix.firewalld:
+    zone: public
+    service: cockpit
+    permanent: true
+    immediate: true
+    state: disabled
+
+- name: Allow only keys for SSH
+  ansible.builtin.template:
+    src: 50-compass.conf.j2
+    dest: /etc/ssh/sshd_config.d/50-compass.conf
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload sshd
+
+- name: Add the repository that carries fail2ban (RedHat family)
+  ansible.builtin.package:
+    name: epel-release
+    state: present
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: Install fail2ban
+  ansible.builtin.package:
+    name: "{{ compass_fail2ban_packages }}"
+    state: present
+
+- name: Lock out an address after repeated SSH failures
+  ansible.builtin.template:
+    src: fail2ban-compass.local.j2
+    dest: /etc/fail2ban/jail.d/compass.local
+    mode: "0644"
+  notify: Restart fail2ban
+
+- name: Start fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true

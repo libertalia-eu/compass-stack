@@ -1,0 +1,3 @@
+# Follow `source` so variables defined in tests/lib.sh are known to the test scripts.
+external-sources=true
+source-path=SCRIPTDIR

@@ -1,0 +1,12 @@
+# Installs a customer system (REQ-053): SSH keys only with a lockout after failures, firewall, automatic security updates, Docker, the stack, smoke tests and a scan from outside.
+# Usage: ansible-playbook -i <customer>/inventory.yml ansible/site.yml
+- name: Install the base of a customer system
+  hosts: all
+  become: true
+  roles:
+    - hardening
+    - updates
+    - docker
+    - compass
+    - smoke
+    - portscan

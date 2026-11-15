@@ -1,0 +1,23 @@
+# Example customer file. Copy it outside the repository (for example ~/.local/share/compass/customer-<name>/inventory.yml),
+# put the secrets into an Ansible Vault file next to it, and never commit either.
+all:
+  hosts:
+    kunde:
+      # The public IPv4 of the server; SSH stays open, keys only, with a lockout after failures.
+      ansible_host: 203.0.113.10
+      ansible_user: root
+      # Security updates install by themselves (REQ-084); restart at night only when a kernel update needs it:
+      # compass_auto_reboot: false
+      # compass_auto_reboot_hour: 3
+      # The stack (REQ-053). Files come from customer/setup.sh; secrets belong into the vault.
+      compass_release: v1.0.0
+      compass_customer_env: ~/.local/share/compass/customer-kunde/compass-kunde.env
+      compass_customer_realm: ~/.local/share/compass/customer-kunde/realm-libertalia.json
+      compass_host_suffix: .kunde.example
+      compass_acme_email: ops@example.com
+      compass_public_ip: 203.0.113.10
+      # The look of the customer: the branding-<name>.env that customer/setup.sh --branding wrote next to the env file.
+      # compass_customer_branding_env: ~/.local/share/compass/customer-kunde/branding-kunde.env
+      # compass_registry: ghcr.io/libertalia-eu
+      # compass_registry_user: ""
+      # compass_registry_token: ""   # empty: no login

@@ -1,0 +1,2 @@
+# TCP ports that must be closed from the internet: Cockpit, mail, databases, Redis and the ports the apps use inside the stack.
+compass_closed_ports: [25, 143, 993, 3306, 5432, 6379, 8000, 8080, 9000, 9980, 3025, 3143, 9090]

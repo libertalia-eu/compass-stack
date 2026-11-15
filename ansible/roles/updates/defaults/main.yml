@@ -1,0 +1,4 @@
+# Security updates install by themselves. The server restarts by itself only when this is true (kernel updates need a restart),
+# at this hour, and only when a restart is needed.
+compass_auto_reboot: false
+compass_auto_reboot_hour: 3

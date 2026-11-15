@@ -1,0 +1,47 @@
+- name: Load the names that differ per distribution family
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+- name: Install the tool for automatic security updates
+  ansible.builtin.package:
+    name: "{{ compass_updates_package }}"
+    state: present
+
+- name: Switch on unattended-upgrades (Debian family)
+  ansible.builtin.template:
+    src: 52compass-unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/52compass-unattended-upgrades
+    mode: "0644"
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Configure dnf-automatic for security updates only (RedHat family)
+  ansible.builtin.template:
+    src: automatic.conf.j2
+    dest: /etc/dnf/automatic.conf
+    mode: "0644"
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: Run dnf-automatic at the fixed night hour (RedHat family)
+  when: ansible_facts['os_family'] == 'RedHat'
+  block:
+    - name: Create the directory for the timer override
+      ansible.builtin.file:
+        path: /etc/systemd/system/dnf-automatic.timer.d
+        state: directory
+        mode: "0755"
+    - name: Set the hour of the timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dnf-automatic.timer.d/compass.conf
+        content: |
+          # Managed by Ansible (REQ-084).
+          [Timer]
+          OnCalendar=
+          OnCalendar=*-*-* {{ '%02d' | format(compass_auto_reboot_hour) }}:00
+          RandomizedDelaySec=0
+        mode: "0644"
+      notify: Reload systemd
+    - name: Start the timer
+      ansible.builtin.systemd:
+        name: dnf-automatic.timer
+        state: started
+        enabled: true
+        daemon_reload: true

@@ -1,0 +1,604 @@
+{
+  "realm": "libertalia",
+  "displayName": "COMPASS",
+  "loginTheme": "compass",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["de", "en"],
+  "defaultLocale": "de",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "clients": [
+    {
+      "clientId": "nextcloud",
+      "name": "Nextcloud",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${NEXTCLOUD_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "https://cloud${COMPASS_HOST_SUFFIX}/apps/user_oidc/code"
+      ],
+      "webOrigins": [
+        "https://cloud${COMPASS_HOST_SUFFIX}"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "https://cloud${COMPASS_HOST_SUFFIX}/*",
+        "backchannel.logout.url": "https://cloud${COMPASS_HOST_SUFFIX}/apps/user_oidc/backchannel-logout/keycloak",
+        "backchannel.logout.session.required": "true"
+      },
+      "authenticationFlowBindingOverrides": {
+        "browser": "a2782188-9072-54e8-834b-6f9aaadb9944"
+      },
+      "protocolMappers": [
+        {
+          "name": "app-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "nextcloud",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "frappe",
+      "name": "Frappe site with CRM, Helpdesk and Raven",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${FRAPPE_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "https://${COMPASS_FRAPPE_LABEL}${COMPASS_HOST_SUFFIX}/api/method/compass_sso.callback.keycloak_login"
+      ],
+      "webOrigins": [
+        "https://${COMPASS_FRAPPE_LABEL}${COMPASS_HOST_SUFFIX}"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "https://${COMPASS_FRAPPE_LABEL}${COMPASS_HOST_SUFFIX}/*",
+        "backchannel.logout.url": "https://${COMPASS_FRAPPE_LABEL}${COMPASS_HOST_SUFFIX}/api/method/compass_sso.api.backchannel_logout",
+        "backchannel.logout.session.required": "true"
+      },
+      "authenticationFlowBindingOverrides": {
+        "browser": "d8bb3783-8bce-5828-af8e-b123a63a1f8b"
+      },
+      "protocolMappers": [
+        {
+          "name": "app-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "crm",
+      "name": "Roles of crm (no sign-in, REQ-032)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "helpdesk",
+      "name": "Roles of helpdesk (no sign-in, REQ-032)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "raven",
+      "name": "Roles of raven (no sign-in, REQ-032)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "compass-admin",
+      "name": "Company Admin role holder (no sign-in)",
+      "enabled": true,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect"
+    }
+  ],
+  "roles": {
+    "client": {
+      "nextcloud": [
+        {
+          "name": "admin",
+          "description": "The group admin of Nextcloud: part of Nextcloud Admin, not for direct use"
+        },
+        {
+          "name": "Nextcloud Nutzer",
+          "description": "May sign in to Nextcloud"
+        },
+        {
+          "name": "Nextcloud Admin",
+          "description": "Admin of Nextcloud; includes Nextcloud Nutzer",
+          "composite": true,
+          "composites": {
+            "client": {
+              "nextcloud": [
+                "Nextcloud Nutzer",
+                "admin"
+              ]
+            }
+          }
+        }
+      ],
+      "crm": [
+        {
+          "name": "CRM Nutzer",
+          "description": "May sign in to CRM"
+        },
+        {
+          "name": "CRM Admin",
+          "description": "Admin of CRM; includes CRM Nutzer",
+          "composite": true,
+          "composites": {
+            "client": {
+              "crm": [
+                "CRM Nutzer"
+              ]
+            }
+          }
+        }
+      ],
+      "helpdesk": [
+        {
+          "name": "Helpdesk Nutzer",
+          "description": "May sign in to Helpdesk"
+        },
+        {
+          "name": "Helpdesk Admin",
+          "description": "Admin of Helpdesk; includes Helpdesk Nutzer",
+          "composite": true,
+          "composites": {
+            "client": {
+              "helpdesk": [
+                "Helpdesk Nutzer"
+              ]
+            }
+          }
+        }
+      ],
+      "raven": [
+        {
+          "name": "Raven Nutzer",
+          "description": "May sign in to Raven"
+        },
+        {
+          "name": "Raven Admin",
+          "description": "Admin of Raven; includes Raven Nutzer",
+          "composite": true,
+          "composites": {
+            "client": {
+              "raven": [
+                "Raven Nutzer"
+              ]
+            }
+          }
+        }
+      ],
+      "compass-admin": [
+        {
+          "name": "Company Admin",
+          "description": "Manages accounts, groups and app roles of the company; no realm settings",
+          "composite": true,
+          "composites": {
+            "client": {
+              "realm-management": [
+                "manage-users",
+                "view-users",
+                "query-users",
+                "query-groups",
+                "query-clients",
+                "view-clients"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "authenticationFlows": [
+    {
+      "alias": "access frappe",
+      "description": "Browser sign-in for the Frappe site: the user needs a Nutzer or Admin role of CRM, Helpdesk or Raven (REQ-022, REQ-032)",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "authenticatorFlow": true,
+          "flowAlias": "access frappe login"
+        },
+        {
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "authenticatorFlow": true,
+          "flowAlias": "access frappe check"
+        }
+      ],
+      "id": "d8bb3783-8bce-5828-af8e-b123a63a1f8b"
+    },
+    {
+      "alias": "access frappe login",
+      "description": "",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-cookie"
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "identity-provider-redirector"
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "authenticatorFlow": true,
+          "flowAlias": "access frappe forms"
+        }
+      ]
+    },
+    {
+      "alias": "access frappe forms",
+      "description": "",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-username-password-form"
+        },
+        {
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "authenticatorFlow": true,
+          "flowAlias": "access frappe 2fa"
+        }
+      ]
+    },
+    {
+      "alias": "access frappe 2fa",
+      "description": "",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-user-configured"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-credential"
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-otp-form"
+        },
+        {
+          "requirement": "DISABLED",
+          "priority": 40,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "webauthn-authenticator"
+        },
+        {
+          "requirement": "DISABLED",
+          "priority": 50,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-recovery-authn-code-form"
+        }
+      ]
+    },
+    {
+      "alias": "access frappe check",
+      "description": "",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-user-role",
+          "authenticatorConfig": "frappe-has-no-crm-role"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-user-role",
+          "authenticatorConfig": "frappe-has-no-helpdesk-role"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-user-role",
+          "authenticatorConfig": "frappe-has-no-raven-role"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 40,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "deny-access-authenticator"
+        }
+      ]
+    },
+    {
+      "alias": "access nextcloud",
+      "description": "Browser sign-in for nextcloud: the user needs the role Nextcloud Nutzer (REQ-022)",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "authenticatorFlow": true,
+          "flowAlias": "access nextcloud login"
+        },
+        {
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "authenticatorFlow": true,
+          "flowAlias": "access nextcloud check"
+        }
+      ],
+      "id": "a2782188-9072-54e8-834b-6f9aaadb9944"
+    },
+    {
+      "alias": "access nextcloud login",
+      "description": "",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-cookie"
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "identity-provider-redirector"
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "authenticatorFlow": true,
+          "flowAlias": "access nextcloud forms"
+        }
+      ]
+    },
+    {
+      "alias": "access nextcloud forms",
+      "description": "",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-username-password-form"
+        },
+        {
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "authenticatorFlow": true,
+          "flowAlias": "access nextcloud 2fa"
+        }
+      ]
+    },
+    {
+      "alias": "access nextcloud 2fa",
+      "description": "",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-user-configured"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-credential"
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-otp-form"
+        },
+        {
+          "requirement": "DISABLED",
+          "priority": 40,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "webauthn-authenticator"
+        },
+        {
+          "requirement": "DISABLED",
+          "priority": 50,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-recovery-authn-code-form"
+        }
+      ]
+    },
+    {
+      "alias": "access nextcloud check",
+      "description": "",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-user-role",
+          "authenticatorConfig": "nextcloud-needs-a-role"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "deny-access-authenticator"
+        }
+      ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "nextcloud-needs-a-role",
+      "config": {
+        "condUserRole": "nextcloud.Nextcloud Nutzer",
+        "negate": "true"
+      }
+    },
+    {
+      "alias": "frappe-has-no-crm-role",
+      "config": {
+        "condUserRole": "crm.CRM Nutzer",
+        "negate": "true"
+      }
+    },
+    {
+      "alias": "frappe-has-no-helpdesk-role",
+      "config": {
+        "condUserRole": "helpdesk.Helpdesk Nutzer",
+        "negate": "true"
+      }
+    },
+    {
+      "alias": "frappe-has-no-raven-role",
+      "config": {
+        "condUserRole": "raven.Raven Nutzer",
+        "negate": "true"
+      }
+    }
+  ]
+}

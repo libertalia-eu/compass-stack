@@ -1,0 +1,52 @@
+# Overrides compose.yaml for a customer system on a public server (REQ-053). Use it as
+#   docker compose -f compose.yaml -f compose.customer.yaml --env-file <customer env> --env-file <release env> up -d --wait
+# Differences to the development stack: Traefik listens on 80 and 443 of the server and gets its certificates from Let's Encrypt,
+# the Frappe image comes from the registry and is not built on the server.
+# shortcut: a second file repeats the Traefik flags of compose.yaml and the Ansible role rewrites traefik/dynamic.yml for the
+# customer; a long-term split of the stack into a shared base and one part per target is open, do it before a third target appears.
+x-registry-frappe: &registry-frappe
+  image: ${COMPASS_FRAPPE_IMAGE:?set COMPASS_FRAPPE_IMAGE (registry and tag of the Frappe image)}
+  build: !reset null
+
+services:
+  # The mock mailboxes, the local certificate and the other parts of the development stack are in compose.override.yaml, which a
+  # customer system never reads (REQ-053, REQ-093).
+  traefik:
+    command: !override
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls.certresolver=letsencrypt
+      - --certificatesresolvers.letsencrypt.acme.email=${COMPASS_ACME_EMAIL:?set COMPASS_ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+      - --certificatesresolvers.letsencrypt.acme.caserver=${COMPASS_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --ping=true
+      - --log.level=INFO
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes: !override
+      - ${COMPASS_TRAEFIK_DYNAMIC:?set COMPASS_TRAEFIK_DYNAMIC (folder of the rendered routes)}:/etc/traefik/dynamic:ro
+      - traefik-acme:/acme
+  frappe-configurator: *registry-frappe
+  frappe-sites:
+    <<: *registry-frappe
+    depends_on: !override
+      frappe-configurator:
+        condition: service_completed_successfully
+      frappe-redis-cache:
+        condition: service_healthy
+      frappe-redis-queue:
+        condition: service_healthy
+  frappe-backend: *registry-frappe
+  frappe-frontend: *registry-frappe
+  frappe-websocket: *registry-frappe
+  frappe-worker: *registry-frappe
+  frappe-scheduler: *registry-frappe
+
+volumes:
+  traefik-acme:

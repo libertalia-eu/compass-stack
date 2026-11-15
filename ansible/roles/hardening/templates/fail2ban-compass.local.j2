@@ -1,0 +1,11 @@
+# Managed by Ansible (REQ-053).
+[DEFAULT]
+backend = systemd
+banaction = firewallcmd-rich-rules
+
+[sshd]
+enabled = true
+mode = aggressive
+maxretry = {{ compass_ssh_maxretry }}
+findtime = {{ compass_ssh_findtime }}
+bantime = {{ compass_ssh_bantime }}

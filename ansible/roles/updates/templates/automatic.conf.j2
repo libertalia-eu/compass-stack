@@ -1,0 +1,9 @@
+# Managed by Ansible (REQ-084).
+[commands]
+upgrade_type = security
+apply_updates = yes
+reboot = {{ 'when-needed' if compass_auto_reboot else 'never' }}
+reboot_command = "shutdown -r now"
+
+[emitters]
+emit_via = stdio

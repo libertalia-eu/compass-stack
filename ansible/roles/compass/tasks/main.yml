@@ -1,0 +1,149 @@
+- name: Require the values of the customer file
+  ansible.builtin.assert:
+    that:
+      - compass_release is defined
+      - compass_customer_env is defined
+      - compass_customer_realm is defined
+      - compass_host_suffix is defined and compass_host_suffix.startswith('.')
+      - compass_acme_email is defined
+      - compass_public_ip is defined
+    fail_msg: "Set compass_release (git ref), compass_customer_env, compass_customer_realm, compass_host_suffix (for example .kunde.de) and compass_acme_email."
+
+- name: Every name of the system points to the server (Let's Encrypt asks for a certificate right at the start)
+  ansible.builtin.command: python3 -c 'import socket,sys; print(socket.gethostbyname(sys.argv[1]))' {{ item }}{{ compass_host_suffix }}
+  loop: "{{ compass_dns_labels }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: compass_dns
+  failed_when: compass_dns.rc != 0 or compass_dns.stdout != compass_public_ip
+
+- name: Refuse a configuration with a development value (REQ-026)
+  ansible.builtin.command: "{{ playbook_dir }}/../customer/setup.sh --check {{ compass_customer_env }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Resolve the release to a commit
+  ansible.builtin.command: git -C {{ playbook_dir }}/.. rev-parse --short=12 {{ compass_release }}^{commit}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: compass_commit
+
+- name: Pack the release locally (nothing of the repository is fetched from GitHub on the server)
+  ansible.builtin.command: git -C {{ playbook_dir }}/.. archive --format=tar.gz -o /tmp/compass-{{ compass_commit.stdout }}.tar.gz {{ compass_commit.stdout }}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Create the folders
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ compass_install_dir }}"
+    - "{{ compass_install_dir }}/releases/{{ compass_commit.stdout }}"
+    - "{{ compass_install_dir }}/config"
+    - "{{ compass_install_dir }}/traefik"
+
+- name: Unpack the release
+  ansible.builtin.unarchive:
+    src: /tmp/compass-{{ compass_commit.stdout }}.tar.gz
+    dest: "{{ compass_install_dir }}/releases/{{ compass_commit.stdout }}"
+    creates: "{{ compass_install_dir }}/releases/{{ compass_commit.stdout }}/compose.yaml"
+
+- name: Compute the tag of the Frappe image from the release
+  ansible.builtin.command: bash {{ compass_install_dir }}/releases/{{ compass_commit.stdout }}/ci/frappe-image-tag.sh
+  register: compass_frappe_tag
+  changed_when: false
+
+- name: Copy the customer configuration
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ compass_install_dir }}/config/{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: "{{ compass_customer_env }}", dest: customer.env, mode: "0600" }
+    - { src: "{{ compass_customer_realm }}", dest: realm-libertalia.json, mode: "0644" }
+  no_log: true
+
+- name: Copy the look of the customer (REQ-036)
+  ansible.builtin.include_tasks: branding.yml
+  when: compass_customer_branding_env is defined
+
+- name: Write the settings of this release and server
+  ansible.builtin.copy:
+    dest: "{{ compass_install_dir }}/config/release.env"
+    mode: "0600"
+    content: |
+      COMPASS_HOST_SUFFIX={{ compass_host_suffix }}
+      COMPASS_ACME_EMAIL={{ compass_acme_email }}
+      COMPASS_ACME_CA={{ compass_acme_ca }}
+      COMPASS_FRAPPE_IMAGE={{ compass_registry }}/compass-frappe:{{ compass_frappe_tag.stdout }}
+      COMPASS_TRAEFIK_DYNAMIC={{ compass_install_dir }}/traefik
+      KEYCLOAK_REALM_FILE={{ compass_install_dir }}/config/realm-libertalia.json
+      {{ ('BRANDING_CSS=' + compass_install_dir + '/config/branding/branding.css') if compass_customer_branding_env is defined else '' }}
+
+- name: Copy the routes of the release
+  ansible.builtin.copy:
+    src: "{{ compass_install_dir }}/releases/{{ compass_commit.stdout }}/traefik/dynamic.yml"
+    dest: "{{ compass_install_dir }}/traefik/dynamic.yml"
+    remote_src: true
+    mode: "0644"
+
+- name: Let the routes ask Let's Encrypt for their certificates
+  ansible.builtin.include_tasks: routes.yml
+  vars:
+    compass_routes_file: "{{ compass_install_dir }}/traefik/dynamic.yml"
+
+- name: Log in to the registry
+  ansible.builtin.command: docker login {{ compass_registry.split('/')[0] }} -u {{ compass_registry_user }} --password-stdin
+  args:
+    stdin: "{{ compass_registry_token }}"
+  no_log: true
+  changed_when: false
+  when: compass_registry_token | length > 0
+
+- name: Start the customer system
+  community.docker.docker_compose_v2:
+    project_src: "{{ compass_install_dir }}/releases/{{ compass_commit.stdout }}"
+    project_name: compass
+    files: [compose.yaml, compose.customer.yaml]
+    env_files:
+      - "{{ compass_install_dir }}/config/customer.env"
+      - "{{ compass_install_dir }}/config/release.env"
+    pull: missing
+    wait: true
+    wait_timeout: 1500
+  # Asynchronous: the pull and the start take many minutes, and one connection held open that long can break without a notice.
+  async: 1800
+  poll: 15
+  no_log: true
+
+# Nextcloud takes name, colors, logo and favicon only after the start, like on the development stack (branding/apply.sh).
+- name: Apply the look of the customer to Nextcloud
+  ansible.builtin.command: bash branding/apply.sh {{ compass_install_dir }}/config/branding/branding.env
+  args:
+    chdir: "{{ compass_install_dir }}/releases/{{ compass_commit.stdout }}"
+  environment:
+    BRANDING_NEXTCLOUD_ONLY: "1"
+    COMPOSE_PROJECT_NAME: compass
+    COMPOSE_FILE: compose.yaml:compose.customer.yaml
+    COMPOSE_ENV_FILES: "{{ compass_install_dir }}/config/customer.env,{{ compass_install_dir }}/config/release.env"
+  changed_when: true
+  when: compass_customer_branding_env is defined
+
+# Keycloak mounts the stylesheet as one file and the copy replaces it by a rename, so a running container keeps the old one.
+- name: Restart Keycloak to pick up a changed stylesheet
+  ansible.builtin.command: docker compose restart keycloak
+  args:
+    chdir: "{{ compass_install_dir }}/releases/{{ compass_commit.stdout }}"
+  environment:
+    COMPOSE_PROJECT_NAME: compass
+    COMPOSE_FILE: compose.yaml:compose.customer.yaml
+    COMPOSE_ENV_FILES: "{{ compass_install_dir }}/config/customer.env,{{ compass_install_dir }}/config/release.env"
+  when:
+    - compass_customer_branding_env is defined
+    - compass_branding_copied.results[0] is changed

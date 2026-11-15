@@ -1,0 +1,5 @@
+- name: Let every route ask Let's Encrypt for its certificate (an empty tls block does not use the resolver of the entry point)
+  ansible.builtin.replace:
+    path: "{{ compass_routes_file }}"
+    regexp: '^      tls: \{\}$'
+    replace: "      tls:\n        certResolver: letsencrypt"
