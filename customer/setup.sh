@@ -268,7 +268,7 @@ FRAPPE_CLIENT_SECRET=$FRAPPE_CLIENT_SECRET
 KEYCLOAK_REALM_FILE=$realm_file
 COMPASS_TEST_USERS=0
 # Backups (REQ-072): on for a customer system. Other target (folder or s3://bucket/prefix, with the COMPASS_BACKUP_S3_* keys
-# of the customer) and schedule: edit these lines, see docs/kundensystem.md.
+# of the customer) and schedule: edit these lines, see docs/customer-system.md.
 COMPOSE_PROFILES=backup
 COMPASS_BACKUP_SCHEDULE="0 2 * * *"
 COMPASS_BACKUP_TARGET=/backups

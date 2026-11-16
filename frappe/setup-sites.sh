@@ -228,8 +228,9 @@ setup_site() {
       --admin-password="$ADMIN_PASSWORD" --db-root-username=root \
       --db-root-password="$DB_ROOT_PASSWORD"
   fi
-  # Telephony before Helpdesk, which needs it; compass_sso (REQ-005) last: sign-out and session end through Keycloak.
-  for app in telephony helpdesk crm raven compass_sso; do
+  # Telephony before Helpdesk, which needs it; compass_sso (REQ-005) after the apps: sign-out and session end through Keycloak;
+  # compass_admin (REQ-087) last, it needs compass_sso.
+  for app in telephony helpdesk crm raven compass_sso compass_admin; do
     if ! bench --site "$site" list-apps 2>/dev/null | grep -q "^$app "; then
       bench --site "$site" install-app "$app"
     fi
