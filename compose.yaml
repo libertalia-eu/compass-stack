@@ -507,6 +507,21 @@ services:
       frappe-db:
         condition: service_healthy
 
+  # The LangDock search (REQ-086): only with the profile "rag" in COMPOSE_PROFILES (customer/setup.sh --rag). Without it no
+  # container starts and the volume is not created. The tag is a version, never latest (customer/setup.sh --check).
+  compass-rag:
+    profiles: ["rag"]
+    restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
+    image: ${COMPASS_RAG_IMAGE:-ghcr.io/libertalia-eu/compass-rag:0.1.0}
+    volumes:
+      - compass-rag-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
 secrets:
   apps_json:
     # frappe/build.sh points COMPASS_APPS_JSON at apps.json or apps-upstream.json.
@@ -522,3 +537,4 @@ volumes:
   nextcloud:
   backups:
   backup-work:
+  compass-rag-data:
