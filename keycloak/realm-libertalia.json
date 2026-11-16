@@ -4,7 +4,7 @@
   "loginTheme": "compass",
   "internationalizationEnabled": true,
   "supportedLocales": ["de", "en"],
-  "defaultLocale": "de",
+  "defaultLocale": "en",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
