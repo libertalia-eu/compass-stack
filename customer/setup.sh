@@ -3,12 +3,14 @@
 # file for Keycloak without the test users. Every secret is generated for this customer; the development
 # values of compose.yaml and the realm file never reach a customer system, and --check refuses them.
 #
-#   customer/setup.sh <name> [<directory>] [--branding <file>] [--mail <file>]
+#   customer/setup.sh <name> [<directory>] [--branding <file>] [--mail <file>] [--rag]
 #                                                write <directory>/compass-<name>.env and <directory>/realm-libertalia.json;
 #                                                with a branding.env (branding/branding.env.example) also the look of the
 #                                                customer (REQ-036): stylesheet, name in the realm, colors for Nextcloud;
 #                                                with a mail.env (customer/mail.env.example) the optional mailboxes
-#                                                of the customer (REQ-056, REQ-066): without it, no mail is sent or fetched
+#                                                of the customer (REQ-056, REQ-066): without it, no mail is sent or fetched;
+#                                                with --rag the LangDock search compass-rag runs too (REQ-086), without it no
+#                                                container and no search data exist
 #   customer/setup.sh --check <env-file>     fail when the configuration holds a development value
 #
 # The generated files stay outside the repository by default: no secret of a customer belongs in git.
@@ -58,6 +60,11 @@ if [ "${1:-}" = "--check" ]; then
       grep -q "^$key=." "$file" || die "$file: the backup target is S3 but $key is empty (REQ-072)"
     done
     echo "warning: $file: the backup target is S3 and backups are not encrypted: whoever reads the bucket reads password hashes and secrets (REQ-094)" >&2
+  fi
+  # The search runs from a version tag, never from latest or an untagged image (REQ-086).
+  rag_image="$(sed -n 's/^COMPASS_RAG_IMAGE=//p' "$file")"
+  if [ -n "$rag_image" ]; then
+    case "${rag_image##*/}" in *:latest | *:) die "$file: COMPASS_RAG_IMAGE needs a version tag, not latest (REQ-086)" ;; *:*) ;; *) die "$file: COMPASS_RAG_IMAGE has no tag (REQ-086)" ;; esac
   fi
   # The realm file of the configuration carries no development value either.
   realm="$(sed -n 's/^KEYCLOAK_REALM_FILE=//p' "$file")"
@@ -136,18 +143,19 @@ mail_read() {
   done
 }
 
-# --branding <file> and --mail <file> may stand anywhere; the other two arguments are the name and the directory.
-branding_file="" mail_file="" positional=()
+# --branding <file>, --mail <file> and --rag may stand anywhere; the other two arguments are the name and the directory.
+branding_file="" mail_file="" rag=0 positional=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --branding) branding_file="${2:?--branding needs a file}"; shift 2 ;;
     --mail) mail_file="${2:?--mail needs a file}"; shift 2 ;;
+    --rag) rag=1; shift ;;
     *) positional+=("$1"); shift ;;
   esac
 done
 set -- "${positional[@]}"
 
-name="${1:?usage: customer/setup.sh <name> [<directory>] [--branding <file>] [--mail <file>]}"
+name="${1:?usage: customer/setup.sh <name> [<directory>] [--branding <file>] [--mail <file>] [--rag]}"
 # The name names the customer in file names and in the realm; keep it a DNS label.
 [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "the name is a label of [a-z0-9-]: $name"
 dir="${2:-$HOME/.local/share/compass/customer-$name}"
@@ -271,7 +279,7 @@ KEYCLOAK_REALM_FILE=$realm_file
 COMPASS_TEST_USERS=0
 # Backups (REQ-072): on for a customer system. Other target (folder or s3://bucket/prefix, with the COMPASS_BACKUP_S3_* keys
 # of the customer) and schedule: edit these lines, see docs/customer-system.md.
-COMPOSE_PROFILES=backup
+COMPOSE_PROFILES=backup$([ "$rag" = 1 ] && echo ,rag)
 COMPASS_BACKUP_SCHEDULE="0 2 * * *"
 COMPASS_BACKUP_TARGET=/backups
 COMPASS_BACKUP_KEEP=7
