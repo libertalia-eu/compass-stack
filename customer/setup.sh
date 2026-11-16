@@ -57,6 +57,7 @@ if [ "${1:-}" = "--check" ]; then
     for key in COMPASS_BACKUP_S3_ENDPOINT COMPASS_BACKUP_S3_KEY_ID COMPASS_BACKUP_S3_KEY; do
       grep -q "^$key=." "$file" || die "$file: the backup target is S3 but $key is empty (REQ-072)"
     done
+    echo "warning: $file: the backup target is S3 and backups are not encrypted: whoever reads the bucket reads password hashes and secrets (REQ-094)" >&2
   fi
   # The realm file of the configuration carries no development value either.
   realm="$(sed -n 's/^KEYCLOAK_REALM_FILE=//p' "$file")"
@@ -217,7 +218,7 @@ fi
 # The realm of the customer: the realm of the product (it holds no test user and no dev-cli client, REQ-093), with the secrets
 # of this customer and its name (REQ-026). The admin
 # of the realm master comes from KEYCLOAK_ADMIN_USER and KEYCLOAK_ADMIN_PASSWORD. Brute-force lockout and a
-# password policy of 12 characters apply to customer realms only (REQ-067).
+# password policy of 12 characters apply to customer realms only (REQ-067). So do login events and admin events, kept 90 days (REQ-094).
 jq \
   --arg name "$name" \
   --arg nextcloud "$NEXTCLOUD_CLIENT_SECRET" \
@@ -227,6 +228,7 @@ jq \
   '.displayName = $display | .displayNameHtml = $display
   | (if $mail == null then . else .smtpServer = $mail end)
   | .bruteForceProtected = true | .passwordPolicy = "length(12)"
+  | .eventsEnabled = true | .eventsExpiration = 7776000 | .adminEventsEnabled = true | .adminEventsDetails = true
   | (.clients[] | select(.clientId == "nextcloud") | .secret) = $nextcloud
   | (.clients[] | select(.clientId == "frappe") | .secret) = $frappe' \
   "$root/keycloak/realm-libertalia.json" >"$realm_file"

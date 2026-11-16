@@ -2,6 +2,12 @@
 # certificate and the Mailpit route are in dev.yml next to this file, which the development stack reads and a customer system never gets.
 http:
   middlewares:
+    # Browsers keep to HTTPS for a year after one visit (REQ-094). No includeSubDomains: the customer may run other sites on the
+    # same domain. Keycloak and Frappe send the header too; this one covers Nextcloud and Euro-Office.
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        contentTypeNosniff: true
     # The one Frappe site answers only under its own name (a foreign host gets "does not exist"), so the app
     # subdomains of REQ-065 rewrite the host header to the site; Frappe itself stays unchanged (REQ-032).
     frappe-host:
@@ -26,40 +32,44 @@ http:
       rule: Host(`auth{{ env "COMPASS_HOST_SUFFIX" }}`)
       entryPoints: [websecure]
       service: keycloak
+      middlewares: [security-headers]
       tls: {}
     nextcloud:
       rule: Host(`cloud{{ env "COMPASS_HOST_SUFFIX" }}`)
       entryPoints: [websecure]
       service: nextcloud
+      middlewares: [security-headers]
       tls: {}
     eurooffice:
       rule: Host(`office{{ env "COMPASS_HOST_SUFFIX" }}`)
       entryPoints: [websecure]
       service: eurooffice
+      middlewares: [security-headers]
       tls: {}
     frappe:
       rule: Host(`{{ env "COMPASS_FRAPPE_LABEL" }}{{ env "COMPASS_HOST_SUFFIX" }}`)
       entryPoints: [websecure]
       service: frappe
+      middlewares: [security-headers]
       tls: {}
     # One subdomain per app (REQ-065): crm. = CRM, support. = Helpdesk, chat. = Raven, all on the one site.
     crm:
       rule: Host(`crm{{ env "COMPASS_HOST_SUFFIX" }}`)
       entryPoints: [websecure]
       service: frappe
-      middlewares: [frappe-host, root-crm]
+      middlewares: [security-headers, frappe-host, root-crm]
       tls: {}
     support:
       rule: Host(`support{{ env "COMPASS_HOST_SUFFIX" }}`)
       entryPoints: [websecure]
       service: frappe
-      middlewares: [frappe-host, root-support]
+      middlewares: [security-headers, frappe-host, root-support]
       tls: {}
     chat:
       rule: Host(`chat{{ env "COMPASS_HOST_SUFFIX" }}`)
       entryPoints: [websecure]
       service: frappe
-      middlewares: [frappe-host, root-chat]
+      middlewares: [security-headers, frappe-host, root-chat]
       tls: {}
   services:
     frappe:
