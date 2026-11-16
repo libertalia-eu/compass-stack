@@ -483,6 +483,8 @@ services:
       COMPASS_BACKUP_SCHEDULE: ${COMPASS_BACKUP_SCHEDULE:-0 2 * * *}
       COMPASS_BACKUP_TARGET: ${COMPASS_BACKUP_TARGET:-/backups}
       COMPASS_BACKUP_KEEP: ${COMPASS_BACKUP_KEEP:-7}
+      # Encrypts every file of a backup (REQ-094); empty keeps them plain, as in the development stack. A customer env sets it.
+      COMPASS_BACKUP_PASSPHRASE: ${COMPASS_BACKUP_PASSPHRASE:-}
       # The keys of an S3 target have no development default: a customer sets them in its env file (REQ-026).
       COMPASS_BACKUP_S3_ENDPOINT: ${COMPASS_BACKUP_S3_ENDPOINT:-}
       COMPASS_BACKUP_S3_REGION: ${COMPASS_BACKUP_S3_REGION:-}
