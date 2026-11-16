@@ -403,6 +403,15 @@
         },
         {
           "requirement": "REQUIRED",
+          "priority": 35,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-user-role",
+          "authenticatorConfig": "frappe-has-no-company-admin-role"
+        },
+        {
+          "requirement": "REQUIRED",
           "priority": 40,
           "userSetupAllowed": false,
           "autheticatorFlow": false,
@@ -597,6 +606,13 @@
       "alias": "frappe-has-no-raven-role",
       "config": {
         "condUserRole": "raven.Raven Nutzer",
+        "negate": "true"
+      }
+    },
+    {
+      "alias": "frappe-has-no-company-admin-role",
+      "config": {
+        "condUserRole": "compass-admin.Company Admin",
         "negate": "true"
       }
     }
