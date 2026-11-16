@@ -4,5 +4,5 @@
   { "url": "https://github.com/libertalia-eu/helpdesk", "branch": "compass-v16.1.0-1" },
   { "url": "https://github.com/libertalia-eu/raven", "branch": "compass-v3.2.0-11" },
   { "url": "https://github.com/libertalia-eu/compass_sso", "branch": "v0.10.0" },
-  { "url": "https://github.com/libertalia-eu/compass_admin", "branch": "v0.1.0" }
+  { "url": "https://github.com/libertalia-eu/compass_admin", "branch": "v0.2.0" }
 ]
