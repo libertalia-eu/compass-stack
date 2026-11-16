@@ -11,9 +11,7 @@
 # older one: a backup is only ever deleted by COMPASS_BACKUP_KEEP after a newer one succeeded.
 #
 # Settings: COMPASS_BACKUP_SCHEDULE, COMPASS_BACKUP_TARGET (a folder or s3://bucket/prefix), COMPASS_BACKUP_KEEP (copies to keep),
-# the passwords of the three databases, and for s3 the keys (drivers/s3.sh). COMPASS_BACKUP_PASSPHRASE encrypts every file of a
-# backup (AES-256-CBC, PBKDF2, REQ-094): the dumps and archives hold password hashes, client secrets and the keys of the sites.
-# Without it the files stay plain. Needs: sh, tar, gzip, pg_dump, psql, mariadb,
+# the passwords of the three databases, and for s3 the keys (drivers/s3.sh). Needs: sh, tar, gzip, pg_dump, psql, mariadb,
 # mariadb-dump, sha256sum, awk; rclone for s3, jq for restore.
 set -eu
 
@@ -42,8 +40,8 @@ esac
 
 # The image brings no MariaDB client and no rclone; installed on the first start (shortcut: needs network, pin an image once one exists).
 ensure_tools() {
-  command -v mariadb-dump >/dev/null && command -v rclone >/dev/null && command -v jq >/dev/null && command -v openssl >/dev/null && return 0
-  apk add --no-cache mariadb-client rclone jq openssl >/dev/null || die "cannot install mariadb-client, rclone, jq and openssl"
+  command -v mariadb-dump >/dev/null && command -v rclone >/dev/null && command -v jq >/dev/null && return 0
+  apk add --no-cache mariadb-client rclone jq >/dev/null || die "cannot install mariadb-client, rclone and jq"
 }
 
 # Nextcloud reads 'maintenance' from config.php on each request, so the job can set it without occ.
@@ -70,30 +68,6 @@ dump_frappe() {
 
 archive() { tar -C "$2" -czf "$1" .; } # archive <file> <folder>
 
-# One cipher for backup and restore; the passphrase comes from the environment, never from a command line.
-crypt() { openssl enc "$@" -aes-256-cbc -pbkdf2 -iter 600000 -pass env:COMPASS_BACKUP_PASSPHRASE; } # crypt -e|-d -in <file> -out <file>
-
-# encrypt_all <folder>: every *.gz becomes *.gz.enc (when COMPASS_BACKUP_PASSPHRASE is set).
-encrypt_all() {
-  [ -n "${COMPASS_BACKUP_PASSPHRASE:-}" ] || return 0
-  for file in "$1"/*.gz; do
-    crypt -e -in "$file" -out "$file.enc" && rm -f "$file" || return 1
-  done
-}
-
-# decrypt_all <folder>: every *.gz.enc becomes *.gz again; a wrong passphrase shows as a file that gzip cannot read (CBC padding alone
-# accepts a wrong key one time in 256).
-decrypt_all() {
-  for file in "$1"/*.gz.enc; do
-    [ -e "$file" ] || return 0
-    [ -n "${COMPASS_BACKUP_PASSPHRASE:-}" ] || die "this backup is encrypted: set COMPASS_BACKUP_PASSPHRASE"
-    if ! { crypt -d -in "$file" -out "${file%.enc}" 2>/dev/null && gzip -t "${file%.enc}" 2>/dev/null; }; then
-      die "cannot decrypt $(basename "$file"): wrong COMPASS_BACKUP_PASSPHRASE"
-    fi
-    rm -f "$file"
-  done
-}
-
 backup() {
   id="$(date -u +%Y%m%dT%H%M%SZ)"
   dir="$work/$id"
@@ -111,11 +85,9 @@ backup() {
   step_name="archive of the volume nextcloud"; step "$step_name" archive "$dir/nextcloud.tar.gz" "$nextcloud_root"
   step_name="archive of the volume frappe-sites"; step "$step_name" archive "$dir/frappe-sites.tar.gz" "$sites_root"
   nextcloud_maintenance off
-  step_name="encryption of the files"; step "$step_name" encrypt_all "$dir"
-  (cd "$dir" && find . -type f ! -name COMPLETE -exec sha256sum {} + >COMPLETE) || die "cannot write the checksums"
+  (cd "$dir" && sha256sum ./*.gz >COMPLETE) || die "cannot write the checksums"
   # COMPLETE goes last: it makes the backup count.
-  for file in "$dir"/*.gz "$dir"/*.enc "$dir/COMPLETE"; do
-    [ -e "$file" ] || continue
+  for file in "$dir"/*.gz "$dir/COMPLETE"; do
     step_name="upload of $(basename "$file")"; step "$step_name" driver_put "$file" "$id"
   done
   echo "backup $id: done"
@@ -158,15 +130,10 @@ restore() {
   dir="$work/restore-$id"
   mkdir -p "$dir"
   trap 'rm -rf "$dir"' EXIT
-  driver_get "$id" COMPLETE "$dir/COMPLETE" || die "backup $id has no COMPLETE"
-  suffix=""
-  ! grep -q '\.enc$' "$dir/COMPLETE" || suffix=".enc"
-  for name in keycloak-db.sql.gz nextcloud-db.sql.gz frappe-db.sql.gz nextcloud.tar.gz frappe-sites.tar.gz; do
-    driver_get "$id" "$name$suffix" "$dir/$name$suffix" || die "backup $id has no $name$suffix"
+  for name in COMPLETE keycloak-db.sql.gz nextcloud-db.sql.gz frappe-db.sql.gz nextcloud.tar.gz frappe-sites.tar.gz; do
+    driver_get "$id" "$name" "$dir/$name" || die "backup $id has no $name"
   done
   (cd "$dir" && sha256sum -c COMPLETE >/dev/null) || die "backup $id is damaged (checksum)"
-  # Decrypted before anything is replaced: a wrong passphrase must not leave a half restored system.
-  decrypt_all "$dir"
   echo "restore $id: databases"
   gunzip -c "$dir/keycloak-db.sql.gz" | PGPASSWORD="${KEYCLOAK_DB_PASSWORD:?}" psql -q -h "$keycloak_db_host" -U keycloak -d keycloak -v ON_ERROR_STOP=1 >/dev/null || die "restore of keycloak-db failed"
   gunzip -c "$dir/nextcloud-db.sql.gz" | MYSQL_PWD="${NEXTCLOUD_DB_ROOT_PASSWORD:?}" mariadb -h "$nextcloud_db_host" -u root || die "restore of nextcloud-db failed"

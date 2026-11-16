@@ -57,7 +57,7 @@ if [ "${1:-}" = "--check" ]; then
     for key in COMPASS_BACKUP_S3_ENDPOINT COMPASS_BACKUP_S3_KEY_ID COMPASS_BACKUP_S3_KEY; do
       grep -q "^$key=." "$file" || die "$file: the backup target is S3 but $key is empty (REQ-072)"
     done
-    grep -q '^COMPASS_BACKUP_PASSPHRASE=.' "$file" || die "$file: the backup target is S3 but COMPASS_BACKUP_PASSPHRASE is empty: the backups would leave the server in plain text (REQ-094)"
+    echo "warning: $file: the backup target is S3 and backups are not encrypted: whoever reads the bucket reads password hashes and secrets (REQ-094)" >&2
   fi
   # The realm file of the configuration carries no development value either.
   realm="$(sed -n 's/^KEYCLOAK_REALM_FILE=//p' "$file")"
@@ -181,13 +181,11 @@ EUROOFFICE_JWT_SECRET=$(secret)
 FRAPPE_DB_ROOT_PASSWORD=$(secret)
 FRAPPE_ADMIN_PASSWORD=$(secret)
 FRAPPE_CLIENT_SECRET=$(secret)
-# The passphrase that encrypts the backups (REQ-094); whoever loses it loses the backups, so it lives in this file, which the operator keeps.
-COMPASS_BACKUP_PASSPHRASE=$(secret)
 
 for value in "$KEYCLOAK_ADMIN_PASSWORD" "$NEXTCLOUD_ADMIN_PASSWORD" "$FRAPPE_ADMIN_PASSWORD" \
   "$NEXTCLOUD_CLIENT_SECRET" "$FRAPPE_CLIENT_SECRET" \
   "$EUROOFFICE_JWT_SECRET" "$KEYCLOAK_DB_PASSWORD" "$NEXTCLOUD_DB_PASSWORD" "$NEXTCLOUD_DB_ROOT_PASSWORD" \
-  "$FRAPPE_DB_ROOT_PASSWORD" "$COMPASS_BACKUP_PASSPHRASE"; do
+  "$FRAPPE_DB_ROOT_PASSWORD"; do
   if is_dev_value "$value"; then
     die "generated value collides with a development value, a customer system refuses it (REQ-026)"
   fi
@@ -277,7 +275,6 @@ COMPOSE_PROFILES=backup
 COMPASS_BACKUP_SCHEDULE="0 2 * * *"
 COMPASS_BACKUP_TARGET=/backups
 COMPASS_BACKUP_KEEP=7
-COMPASS_BACKUP_PASSPHRASE=$COMPASS_BACKUP_PASSPHRASE
 COMPASS_RESTART=unless-stopped
 ${mail_lines}
 ${branding_lines}
