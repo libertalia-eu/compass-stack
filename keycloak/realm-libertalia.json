@@ -11,7 +11,46 @@
   "resetPasswordAllowed": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
+  "adminPermissionsEnabled": true,
   "clients": [
+    {
+      "clientId": "admin-permissions",
+      "authorizationSettings": {
+        "policies": [
+          {
+            "name": "company-admin",
+            "type": "role",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": { "roles": "[{\"id\":\"compass-admin/Company Admin\",\"required\":true}]" }
+          },
+          {
+            "name": "company-admin-manages-users",
+            "type": "scope",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "defaultResourceType": "Users",
+              "resources": "[\"Users\"]",
+              "scopes": "[\"view\",\"manage-group-membership\",\"manage\",\"map-roles\",\"reset-password\"]",
+              "applyPolicies": "[\"company-admin\"]"
+            }
+          },
+          {
+            "name": "company-admin-maps-roles",
+            "type": "scope",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "defaultResourceType": "Roles",
+              "resources": "[\"Roles\"]",
+              "scopes": "[\"map-role\"]",
+              "applyPolicies": "[\"company-admin\"]"
+            }
+          }
+        ]
+      }
+    },
     {
       "clientId": "nextcloud",
       "name": "Nextcloud",
@@ -215,12 +254,11 @@
       "compass-admin": [
         {
           "name": "Company Admin",
-          "description": "Manages accounts, groups and app roles of the company; no realm settings",
+          "description": "Manages accounts and app roles of the company; no groups, no realm settings",
           "composite": true,
           "composites": {
             "client": {
               "realm-management": [
-                "manage-users",
                 "view-users",
                 "query-users",
                 "query-groups",
