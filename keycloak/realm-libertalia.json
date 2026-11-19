@@ -101,6 +101,7 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "protocol": "openid-connect",
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email", "kc-admin-api"],
       "redirectUris": [
         "https://${COMPASS_FRAPPE_LABEL}${COMPASS_HOST_SUFFIX}/api/method/compass_sso.callback.keycloak_login"
       ],
