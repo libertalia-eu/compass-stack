@@ -70,7 +70,7 @@ services:
 
   keycloak:
     restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
-    image: quay.io/keycloak/keycloak:26.8.1
+    image: quay.io/keycloak/keycloak:26.8.2-3
     # The Docker VM of the development machine has 6.2 GB: when it runs out of memory the kernel ends the process
     # with the highest score. Keycloak is the login of every app, so it goes last and Euro-Office first.
     oom_score_adj: -500
