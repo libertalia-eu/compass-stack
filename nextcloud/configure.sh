@@ -13,6 +13,10 @@ if [ -f /certs/ca.pem ] && ! occ security:certificates | grep -q 'ca.pem'; then
   occ security:certificates:import /certs/ca.pem
 fi
 
+# Nextcloud itself updates only through the image tag: the web updater would raise the version in the volume above the
+# image, and the container would refuse to start after the next restart. Apps stay installable and updatable.
+occ config:system:set upgrade.disable-web --value=true --type=boolean
+
 # Pretty URLs (/apps/... without index.php): the redirect URI that Keycloak knows depends on them.
 occ config:system:set htaccess.RewriteBase --value=/
 occ maintenance:update:htaccess

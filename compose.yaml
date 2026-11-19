@@ -126,7 +126,7 @@ services:
   auth-entry:
     restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
     # Entry of the auth host (REQ-024): the bare address opens the admin console of the realm; the rest goes to Keycloak.
-    image: nginx:1.29-alpine
+    image: nginx:1.30-alpine
     volumes:
       - ./keycloak/auth-entry.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
@@ -167,7 +167,7 @@ services:
 
   nextcloud-fpm:
     restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
-    image: nextcloud:production-fpm-alpine
+    image: nextcloud:34.0-fpm-alpine
     environment:
       MYSQL_HOST: nextcloud-db
       MYSQL_DATABASE: nextcloud
@@ -227,7 +227,7 @@ services:
   # PHP to nextcloud-fpm:9000 over the network, so it works on Coolify too (no shared network namespace needed).
   nextcloud:
     restart: ${COMPASS_RESTART:-on-failure:5} # one variable (REQ-071); default for the 6 GB dev VM (REQ-040)
-    image: nginx:1.28-alpine
+    image: nginx:1.30-alpine
     volumes:
       - nextcloud:/var/www/html:ro
       - ./nextcloud/nginx.conf:/etc/nginx/conf.d/default.conf:ro
