@@ -1,7 +1,7 @@
 [
   { "url": "https://github.com/libertalia-eu/telephony", "branch": "compass-9447577" },
-  { "url": "https://github.com/libertalia-eu/crm", "branch": "compass-v16.0.2-1" },
-  { "url": "https://github.com/libertalia-eu/helpdesk", "branch": "compass-v16.1.0-1" },
+  { "url": "https://github.com/frappe/crm", "branch": "v16.0.2" },
+  { "url": "https://github.com/frappe/helpdesk", "branch": "v16.1.0" },
   { "url": "https://github.com/libertalia-eu/raven", "branch": "compass-v3.2.0-11" },
   { "url": "https://github.com/libertalia-eu/compass_sso", "branch": "v0.11.1" },
   { "url": "https://github.com/libertalia-eu/compass_admin", "branch": "v0.6.2" }

@@ -35,28 +35,6 @@ run_console() {
   fi
 }
 
-# roles_without_desk_access <site>: the roles of the apps give no access to Desk (REQ-044). Frappe creates every role with
-# desk_access = 1, and a user with such a role becomes a System User who may open /app. Saving the role makes Frappe work out
-# the user type of everyone who has it again. "Agent Manager" brings "Agent" with it. HD Customer is set by Helpdesk itself.
-desk_free_roles=("Agent" "Agent Manager" "Sales User" "Sales Manager" "Raven User" "Raven Admin")
-roles_without_desk_access() {
-  local site="$1" role
-  # Values reach the Python code through the environment, never through the code text.
-  DESK_FREE_ROLES="$(printf '%s\n' "${desk_free_roles[@]}")" run_console "$site" <<'PYTHON'
-import os
-for name in os.environ["DESK_FREE_ROLES"].splitlines():
-    role = frappe.get_doc("Role", name)
-    if role.desk_access:
-        role.desk_access = 0
-        role.save(ignore_permissions=True)
-frappe.db.commit()
-PYTHON
-  # The console exits 0 on a Python error, so check the result (bench execute prints nothing for a value of 0, so count the match).
-  for role in "${desk_free_roles[@]}"; do
-    bench --site "$site" execute frappe.db.count --args "['Role', {'name': '$role', 'desk_access': 0}]" | grep -qx 1
-  done
-}
-
 # company_admin_role <site>: the Frappe role Company Admin (REQ-048) opens Desk and manages the data of the apps, but not the login or the
 # code of the site. compass_sso gives the role when the Keycloak role Company Admin signs in (REQ-045). Full rights on every doctype of the apps
 # CRM, Helpdesk, Raven and Telephony; read only on User and Role (a write right on User would let a Company Admin give themselves
@@ -311,7 +289,6 @@ PY
       'user_id_property': 'preferred_username',
       'sign_ups': 'Allow'}}"
 
-  roles_without_desk_access "$site"
   company_admin_role "$site"
   # The test users of the development stack (REQ-026, REQ-093); a customer system has no such script.
   ! declare -F setup_dev_users >/dev/null || setup_dev_users "$site"
