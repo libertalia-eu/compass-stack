@@ -118,14 +118,13 @@
       },
       "protocolMappers": [
         {
-          "name": "app-roles",
+          "name": "groups",
           "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "protocolMapper": "oidc-group-membership-mapper",
           "consentRequired": false,
           "config": {
-            "claim.name": "resource_access.${client_id}.roles",
-            "jsonType.label": "String",
-            "multivalued": "true",
+            "claim.name": "groups",
+            "full.path": "false",
             "id.token.claim": "true",
             "access.token.claim": "false",
             "userinfo.token.claim": "true"
@@ -172,6 +171,17 @@
       "directAccessGrantsEnabled": false,
       "protocol": "openid-connect"
     }
+  ],
+  "groups": [
+    { "name": "CRM Nutzer", "clientRoles": { "crm": ["CRM Nutzer"] } },
+    { "name": "CRM Admin", "clientRoles": { "crm": ["CRM Admin"] } },
+    { "name": "Helpdesk Nutzer", "clientRoles": { "helpdesk": ["Helpdesk Nutzer"] } },
+    { "name": "Helpdesk Admin", "clientRoles": { "helpdesk": ["Helpdesk Admin"] } },
+    { "name": "Raven Nutzer", "clientRoles": { "raven": ["Raven Nutzer"] } },
+    { "name": "Raven Admin", "clientRoles": { "raven": ["Raven Admin"] } },
+    { "name": "Nextcloud Nutzer", "clientRoles": { "nextcloud": ["Nextcloud Nutzer"] } },
+    { "name": "Nextcloud Admin", "clientRoles": { "nextcloud": ["Nextcloud Admin"] } },
+    { "name": "Company Admin", "clientRoles": { "compass-admin": ["Company Admin"] } }
   ],
   "roles": {
     "client": {
